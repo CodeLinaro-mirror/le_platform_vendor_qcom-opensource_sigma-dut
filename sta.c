@@ -195,6 +195,18 @@ struct wil_wmi_p2p_cfg_cmd {
 } __attribute__((packed));
 #endif /* __linux__ */
 
+static int fwtest_cmd_wrapper(struct sigma_dut *dut, const char *arg,
+			       const char *ifname)
+{
+	int ret = -1;
+
+	if (strncmp(dut->device_driver, "ath11k", 6) == 0)
+		ret = run_system_wrapper(dut, "ath11k-fwtest -i %s %s",
+					 ifname, arg);
+
+	return ret;
+}
+
 #ifdef ANDROID
 
 static int add_ipv6_rule(struct sigma_dut *dut, const char *ifname);
