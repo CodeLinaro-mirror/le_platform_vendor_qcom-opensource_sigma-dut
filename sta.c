@@ -7721,6 +7721,9 @@ cmd_sta_set_wireless_common(const char *intf, struct sigma_dut *dut,
 		case DRIVER_WCN:
 			iwpriv_sta_set_amsdu(dut, intf, val);
 			break;
+		case DRIVER_MAC80211:
+			/* For MAC80211 drivers, AMSDU is enabled by default */
+			break;
 		default:
 			if (strcmp(val, "1") == 0 ||
 			    strcasecmp(val, "Enable") == 0) {
@@ -11792,13 +11795,19 @@ cmd_sta_set_wireless_vht(struct sigma_dut *dut, struct sigma_conn *conn,
 	val = get_param(cmd, "BCC");
 	if (val) {
 		int bcc;
-
-		bcc = strcmp(val, "1") == 0 || strcasecmp(val, "Enable") == 0;
-		/* use LDPC iwpriv itself to set bcc coding, bcc coding
-		 * is mutually exclusive to bcc */
-		iwpriv_status = run_iwpriv(dut, intf, "ldpc %d", !bcc);
-		if (iwpriv_status)
-			sta_config_params(dut, intf, STA_SET_LDPC, !bcc);
+		switch (get_driver_type(dut)) {
+		case DRIVER_MAC80211:
+			fwtest_cmd_wrapper(dut, "-t 1 -m 0x0 -v 0 0x1B 0x10000407", intf);
+			fwtest_cmd_wrapper(dut, "-t 1 -m 0x0 -v 0 0x1D 0", intf);
+			break;
+		default:
+			bcc = strcmp(val, "1") == 0 || strcasecmp(val, "Enable") == 0;
+			/* use LDPC iwpriv itself to set bcc coding, bcc coding */
+			 /* is mutually exclusive to bcc */
+			iwpriv_status = run_iwpriv(dut, intf, "ldpc %d", !bcc);
+			if (iwpriv_status)
+				sta_config_params(dut, intf, STA_SET_LDPC, !bcc);
+		}
 	}
 
 	val = get_param(cmd, "MaxHE-MCS_1SS_RxMapLTE80");
@@ -12368,16 +12377,24 @@ cmd_sta_set_wireless_vht(struct sigma_dut *dut, struct sigma_conn *conn,
 	val = get_param(cmd, "OMControl");
 	if (val) {
 		int set_val = 1;
+		switch (get_driver_type(dut)) {
+		case DRIVER_MAC80211:
+			/* For MAC80211 drivers, there is no provision to
+			 * control 802.11ax OMI, OMControl is enabled by
+			 * default, simply break here.
+			 */
+			break;
+		default:
+			if (strcasecmp(val, "Enable") == 0)
+				set_val = 1;
+			else if (strcasecmp(val, "Disable") == 0)
+				set_val = 0;
 
-		if (strcasecmp(val, "Enable") == 0)
-			set_val = 1;
-		else if (strcasecmp(val, "Disable") == 0)
-			set_val = 0;
-
-		if (sta_set_om_ctrl_supp(dut, intf, set_val)) {
-			send_resp(dut, conn, SIGMA_ERROR,
-				  "ErrorCode,Failed to set OM ctrl supp");
-			return STATUS_SENT_ERROR;
+			if (sta_set_om_ctrl_supp(dut, intf, set_val)) {
+				send_resp(dut, conn, SIGMA_ERROR,
+						"ErrorCode,Failed to set OM ctrl supp");
+				return STATUS_SENT_ERROR;
+			}
 		}
 	}
 
