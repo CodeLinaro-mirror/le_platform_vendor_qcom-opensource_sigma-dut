@@ -16704,6 +16704,60 @@ failed:
 	return ERROR_SEND_STATUS;
 }
 
+static int
+mac80211_sta_transmit_omi(struct sigma_dut *dut, struct sigma_conn *conn,
+			  struct sigma_cmd *cmd)
+{
+	int ret;
+	const char *val;
+	const char *intf = get_param(cmd, "Interface");
+	uint8_t rx_nss = 2, ch_bw = 0, tx_nsts = 2, ulmu_dis = 0,
+		ulmu_data_dis = 0;
+	uint32_t param_value = 0x7;
+	char bssid[20] = {0};
+	char buf[100] = {0};
+
+	val = get_param(cmd, "OMCtrl_RxNSS");
+	if (val) {
+		rx_nss = atoi(val);
+		param_value |=  rx_nss << 6;
+	} else {
+		param_value |=  (rx_nss - 1) << 6;
+	}
+
+	val = get_param(cmd, "OMCtrl_ChnlWidth");
+	if (val)
+		ch_bw = atoi(val);
+	param_value |= ch_bw  << 9;
+
+	val = get_param(cmd, "OMCtrl_ULMUDisable");
+	if (val)
+		ulmu_dis = atoi(val);
+	param_value |= ulmu_dis << 11;
+
+	val = get_param(cmd, "OMCtrl_TxNSTS");
+	if (val) {
+		tx_nsts = atoi(val);
+		param_value |= tx_nsts << 12;
+	} else {
+		param_value |= (tx_nsts - 1) << 12;
+	}
+
+	val = get_param(cmd, "OMCtrl_ULMUDataDisable");
+	if (val)
+		ulmu_data_dis = atoi(val);
+	param_value |= ulmu_data_dis  << 17;
+
+	ret = get_wpa_status(intf, "bssid", bssid, sizeof(bssid));
+	if (ret < 0)
+		return ret;
+
+	snprintf(buf, sizeof(buf), "-t 3 -m 0 -v 0 -a %s 0x1c %d", bssid, param_value);
+	ret = fwtest_cmd_wrapper(dut, buf, intf);
+
+	return ret;
+}
+
 static int mac80211_he_ltf_mapping(struct sigma_dut *dut,
 				   const char *val)
 {
@@ -16819,6 +16873,13 @@ static enum sigma_cmd_result mac80211_sta_set_rfeature_he(const char *intf, stru
 		res = mac80211_he_gi(dut, intf, val);
 		if (res != SUCCESS_SEND_STATUS)
 			return res;
+	}
+
+	val = get_param(cmd, "transmitOMI");
+	if (val && mac80211_sta_transmit_omi(dut, conn, cmd)) {
+		send_resp(dut, conn, SIGMA_ERROR,
+			  "ErrorCode,sta_transmit_omi failed");
+		return STATUS_SENT_ERROR;
 	}
 
 	return SUCCESS_SEND_STATUS;
