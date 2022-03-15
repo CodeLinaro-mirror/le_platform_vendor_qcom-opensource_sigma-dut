@@ -16704,6 +16704,234 @@ failed:
 	return ERROR_SEND_STATUS;
 }
 
+static int mac80211_send_twt_cmd(const char *intf, char *buf, char *file_name)
+{
+	int ret = -1;
+	struct dirent *entry;
+	const char *root_path = "/sys/kernel/debug/ieee80211";
+	struct stat s;
+	char path[512] = {0};
+	char cmd[1024] = {0};
+
+#ifdef __linux__
+	DIR *dir;
+
+	dir = opendir(root_path);
+	if (!dir)
+		return -2;
+
+	while ((entry = readdir(dir))) {
+		if (strcmp(entry->d_name, ".") == 0 ||
+		    strcmp(entry->d_name, "..") == 0)
+			continue;
+
+		snprintf(path, sizeof(path), "%s/%s/netdev:%s/twt/%s",
+			 root_path, entry->d_name, intf, file_name);
+
+		ret = stat(path, &s);
+		if (ret)
+			continue;
+
+		snprintf(cmd, sizeof(cmd), "echo '%s' > %s", buf, path);
+
+		ret = system(cmd);
+		if (ret)
+			ret = -1;
+		break;
+	}
+
+	closedir(dir);
+#endif /* __linux__ */
+
+	return ret;
+}
+
+static int
+mac80211_sta_twt_request(struct sigma_dut *dut, struct sigma_conn *conn,
+			 struct sigma_cmd *cmd)
+{
+	int ret;
+	const char *val;
+	const char *intf = get_param(cmd, "Interface");
+	int wake_intvl_exp = 10, nominal_min_wake_dur = 255;
+	uint32_t wake_intvl_mantissa = 512, target_wake_time = 0;
+	uint32_t bcast_twt_recommdn = 0, bcast_twt_persis = 0;
+	uint8_t bcast_twt = 0, flow_type = 0, twt_trigger = 0;
+	uint8_t protection = 0, cmd_type = TWT_SUGGEST_CMD;
+	uint32_t dialog_id = 0, wake_duration, wake_intvl;
+	char buf[256] = {0};
+	char bssid[20] = {0};
+
+	val = get_param(cmd, "FlowType");
+	if (val) {
+		flow_type = atoi(val);
+		if (flow_type != 0 && flow_type != 1) {
+			sigma_dut_print(dut, DUT_MSG_ERROR,
+					"TWT: Invalid FlowType %d", flow_type);
+			return -1;
+		}
+	}
+
+	val = get_param(cmd, "TWT_Trigger");
+	if (val) {
+		twt_trigger = atoi(val);
+		if (twt_trigger != 0 && twt_trigger != 1) {
+			sigma_dut_print(dut, DUT_MSG_ERROR,
+					"TWT: Invalid TWT_Trigger %d",
+					twt_trigger);
+			return -1;
+		}
+	}
+
+	val = get_param(cmd, "Protection");
+	if (val) {
+		protection = atoi(val);
+		if (protection != 0 && protection != 1) {
+			sigma_dut_print(dut, DUT_MSG_ERROR,
+					"TWT: Invalid Protection %d",
+					protection);
+			return -1;
+		}
+	}
+
+	val = get_param(cmd, "SetupCommand");
+	if (val) {
+		cmd_type = atoi(val);
+		if (cmd_type > TWT_DEMAND_CMD)
+			cmd_type = TWT_SUGGEST_CMD;
+	}
+
+	val = get_param(cmd, "TargetWakeTime");
+	if (val)
+		target_wake_time = atoi(val);
+
+	val = get_param(cmd, "WakeIntervalMantissa");
+	if (val)
+		wake_intvl_mantissa = atoi(val);
+
+	val = get_param(cmd, "WakeIntervalExp");
+	if (val)
+		wake_intvl_exp = atoi(val);
+
+	val = get_param(cmd, "NominalMinWakeDur");
+	if (val)
+		nominal_min_wake_dur = atoi(val);
+
+	val = get_param(cmd, "BTWT_ID");
+	if (val) {
+		dialog_id = atoi(val);
+		bcast_twt = 1;
+	}
+
+	val = get_param(cmd, "BTWT_Persistence");
+	if (val) {
+		bcast_twt_persis = atoi(val);
+		bcast_twt = 1;
+	}
+
+	val = get_param(cmd, "BTWT_Recommendation");
+	if (val) {
+		bcast_twt_recommdn = atoi(val);
+		bcast_twt = 1;
+	}
+
+	wake_duration = 256 * nominal_min_wake_dur;
+
+	if (wake_intvl_exp && wake_intvl_mantissa)
+		wake_intvl = wake_intvl_mantissa * (2 << (wake_intvl_exp - 1));
+	else
+		wake_intvl = wake_intvl_mantissa;
+
+	if (bcast_twt)
+		sigma_dut_print(dut, DUT_MSG_DEBUG,
+				"BCAST_TWT: ID %d, RECOMM %d, PERSIS %d",
+				dialog_id, bcast_twt_recommdn,
+				bcast_twt_persis);
+
+	ret = get_wpa_status(intf, "bssid", bssid, sizeof(bssid));
+	if (ret < 0)
+		return ret;
+
+	snprintf(buf, sizeof(buf), "%s %u %u %u %u %u %hhu %hhu %hhu %hhu %hhu %u %u",
+		 bssid, dialog_id, wake_intvl, wake_intvl_mantissa, wake_duration,
+		 target_wake_time, cmd_type, bcast_twt, twt_trigger, flow_type,
+		 protection, bcast_twt_persis, bcast_twt_recommdn);
+
+	return mac80211_send_twt_cmd(intf, buf, "add_dialog");
+}
+
+static int
+mac80211_sta_twt_teardown(struct sigma_dut *dut, struct sigma_conn *conn,
+			  struct sigma_cmd *cmd)
+{
+	int ret;
+	const char *val;
+	char buf[64] = {0};
+	char bssid[20] = {0};
+	uint32_t dialog_id = 0;
+	const char *intf = get_param(cmd, "Interface");
+
+	val = get_param(cmd, "BTWT_ID");
+	if (val)
+		dialog_id = atoi(val);
+
+	ret = get_wpa_status(intf, "bssid", bssid, sizeof(bssid));
+	if (ret < 0)
+		return ret;
+
+	snprintf(buf, sizeof(buf), "%s %u", bssid, dialog_id);
+
+	return mac80211_send_twt_cmd(intf, buf, "del_dialog");
+}
+
+static int
+mac80211_sta_twt_suspend(struct sigma_dut *dut, struct sigma_conn *conn,
+			 struct sigma_cmd *cmd)
+{
+	int ret;
+	char buf[64] = {0};
+	char bssid[20] = {0};
+	uint32_t dialog_id = 0;
+	const char *intf = get_param(cmd, "Interface");
+
+	ret = get_wpa_status(intf, "bssid", bssid, sizeof(bssid));
+	if (ret < 0)
+		return ret;
+
+	snprintf(buf, sizeof(buf), "%s %u", bssid, dialog_id);
+
+	return mac80211_send_twt_cmd(intf, buf, "pause_dialog");
+}
+
+static int
+mac80211_sta_twt_resume(struct sigma_dut *dut, struct sigma_conn *conn,
+			struct sigma_cmd *cmd)
+{
+	int ret;
+	char buf[64] = {0};
+	char bssid[20] = {0};
+	uint32_t dialog_id = 0;
+	uint32_t next2_twt_size = 1;
+	uint32_t resume_duration = 0;
+	const char *intf = get_param(cmd, "Interface");
+	const char *val;
+
+	val = get_param(cmd, "TWT_ResumeDuration");
+	if (val) {
+		resume_duration = atoi(val);
+		resume_duration = resume_duration * 1000 * 1000;
+	}
+
+	ret = get_wpa_status(intf, "bssid", bssid, sizeof(bssid));
+	if (ret < 0)
+		return ret;
+
+	snprintf(buf, sizeof(buf), "%s %u %u %u", bssid, dialog_id,
+		 resume_duration, next2_twt_size);
+
+	return mac80211_send_twt_cmd(intf, buf, "resume_dialog");
+}
+
 static int
 mac80211_sta_transmit_omi(struct sigma_dut *dut, struct sigma_conn *conn,
 			  struct sigma_cmd *cmd)
@@ -16873,6 +17101,40 @@ static enum sigma_cmd_result mac80211_sta_set_rfeature_he(const char *intf, stru
 		res = mac80211_he_gi(dut, intf, val);
 		if (res != SUCCESS_SEND_STATUS)
 			return res;
+	}
+
+	val = get_param(cmd, "TWT_Setup");
+	if (val) {
+		if (strcasecmp(val, "Request") == 0) {
+			if (mac80211_sta_twt_request(dut, conn, cmd)) {
+				send_resp(dut, conn, SIGMA_ERROR,
+					  "ErrorCode,TWT setup failed");
+				return STATUS_SENT_ERROR;
+			}
+		} else if (strcasecmp(val, "Teardown") == 0) {
+			if (mac80211_sta_twt_teardown(dut, conn, cmd)) {
+				send_resp(dut, conn, SIGMA_ERROR,
+					  "ErrorCode,TWT teardown failed");
+				return STATUS_SENT_ERROR;
+			}
+		}
+	}
+
+	val = get_param(cmd, "TWT_Operation");
+	if (val) {
+		if (strcasecmp(val, "Suspend") == 0) {
+			if (mac80211_sta_twt_suspend(dut, conn, cmd)) {
+				send_resp(dut, conn, SIGMA_ERROR,
+					  "ErrorCode,TWT suspend failed");
+				return STATUS_SENT_ERROR;
+			}
+		} else if (strcasecmp(val, "Resume") == 0) {
+			if (mac80211_sta_twt_resume(dut, conn, cmd)) {
+				send_resp(dut, conn, SIGMA_ERROR,
+					  "ErrorCode,TWT resume failed");
+				return STATUS_SENT_ERROR;
+			}
+		}
 	}
 
 	val = get_param(cmd, "transmitOMI");
