@@ -14471,6 +14471,13 @@ static int cmd_sta_send_frame_he(struct sigma_dut *dut,
 	switch (get_driver_type(dut)) {
 	case DRIVER_WCN:
 		return wcn_sta_send_frame_he(dut, conn, cmd);
+	case DRIVER_MAC80211:
+		/* Currently for MAC80211 drivers, there is no such frame
+		 * that needs to be really sent, but one MBO HE testcase
+		 * fails if there is no handling for MAC80211 drivers,
+		 * therefore return 1 for MAC80211 drivers.
+		 */
+		return 1;
 	default:
 		send_resp(dut, conn, SIGMA_ERROR,
 			  "errorCode,Unsupported sta_set_frame(HE) with the current driver");
@@ -17205,6 +17212,10 @@ static enum sigma_cmd_result mac80211_sta_set_rfeature_he(const char *intf, stru
 			  "ErrorCode,sta_transmit_omi failed");
 		return STATUS_SENT_ERROR;
 	}
+
+	val = get_param(cmd, "Ch_Pref");
+	if (val && mbo_set_non_pref_ch_list(dut, conn, intf, cmd) == 0)
+		return STATUS_SENT;
 
 	return SUCCESS_SEND_STATUS;
 }
