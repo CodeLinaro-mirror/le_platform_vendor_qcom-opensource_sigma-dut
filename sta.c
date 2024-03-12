@@ -1204,6 +1204,12 @@ static enum sigma_cmd_result cmd_sta_get_ip_config(struct sigma_dut *dut,
 	else
 		ifname = intf;
 
+	if (dut->gw_fail) {
+		if (set_ipv4_gw(dut, dut->gw) < 1) {
+			sigma_dut_print(dut, DUT_MSG_ERROR, "set gateway fail  %s", dut->gw);
+		}
+		dut->gw_fail = 0;
+	}
 	/*
 	 * UCC may assume the IP address to be available immediately after
 	 * association without trying to run sta_get_ip_config multiple times.
@@ -1664,9 +1670,10 @@ static enum sigma_cmd_result cmd_sta_set_ip_config(struct sigma_dut *dut,
 	gw = get_param(cmd, "defaultGateway");
 	if (gw) {
 		if (set_ipv4_gw(dut, gw) < 1) {
-			send_resp(dut, conn, SIGMA_ERROR,
-				  "ErrorCode,Failed to set default gateway");
-			return 0;
+			memset(dut->gw, 0, 16);
+			memcpy(dut->gw, gw, strlen(gw));
+			sigma_dut_print(dut, DUT_MSG_ERROR, "Failed to set gw %s", dut->gw);
+			dut->gw_fail = 1;
 		}
 	}
 
