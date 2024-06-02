@@ -1192,6 +1192,8 @@ struct sigma_dut {
 #endif /* ANDROID_MDNS */
 	char host_name[100];
 	int sta_roaming_disabled;
+	char gw[16];
+	int gw_fail;
 };
 
 
