@@ -8515,6 +8515,9 @@ write_conf:
 	if (dut->bridge)
 		fprintf(f, "bridge=%s\n", dut->bridge);
 
+	if (dut->ap_band_6g && mode == AP_11ax && drv == DRIVER_MAC80211)
+		fprintf(f, "fils_discovery_max_interval=20\n");
+
 	if (dut->ap_is_dual && conf_counter == 1) {
 		if (dut->ap_channel_1)
 			fprintf(f, "channel=%d\n", dut->ap_channel_1);
