@@ -8235,6 +8235,14 @@ enum sigma_cmd_result cmd_ap_config_commit(struct sigma_dut *dut,
 	drv = get_driver_type(dut);
 	mode = dut->ap_mode;
 
+        if (drv == DRIVER_MAC80211) {
+              if (dut->ap_cipher == AP_WEP) {
+                   send_resp(dut, conn, SIGMA_ERROR,
+                             "errorCode,Not Supported");
+                   return 0;
+              }
+         }
+
 	if (dut->mode == SIGMA_MODE_STATION) {
 		stop_sta_mode(dut);
 		sleep(1);
