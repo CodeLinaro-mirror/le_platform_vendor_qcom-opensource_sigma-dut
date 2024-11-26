@@ -43,9 +43,6 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 	char extra[100], int_arg[100], intf_arg[100], ip_dst[100], ping[100];
 	struct in6_addr ip6_addr;
 	bool broadcast = false;
-	int ip_utility;
-	char ip_cmd[100];
-	bool retry_ping = false;
 
 	val = get_param(cmd, "Type");
 	if (!val)
@@ -157,35 +154,13 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 			 get_station_ifname(dut));
 	else
 		intf_arg[0] = '\0';
-
-	memset(ip_cmd, 0, sizeof(ip_cmd));
-	snprintf(ip_cmd, sizeof(ip_cmd), "ping%s%s -c %d%s -s %d%s -q%s %s",
-		type == 2 ? "6" : "", broadcast ? " -b" : "",
-		pkts, int_arg, size, extra, intf_arg, dst);
-
-	ip_utility = run_system(dut, ip_cmd);
-	if (ip_utility != 0) {
-		sigma_dut_print(dut, DUT_MSG_INFO,
-				"ip_cmd returned %d", ip_utility);
-		retry_ping = true;
-	} else {
-		fprintf(f, "#!" SHELL "\n"
-			"ping%s%s -c %d%s -s %d%s -q%s %s > %s"
-			"/sigma_dut-ping.%d &\n"
-			"echo $! > %s/sigma_dut-ping-pid.%d\n",
-			type == 2 ? "6" : "", broadcast ? " -b" : "",
-			pkts, int_arg, size, extra,
-			intf_arg, dst, dut->sigma_tmpdir, id, dut->sigma_tmpdir, id);
-	}
-
-	if (retry_ping) {
-		fprintf(f, "#!" SHELL "\n"
-			"ping%s -c %d%s -s %d%s -q%s %s > %s"
-			"/sigma_dut-ping.%d &\n"
-			"echo $! > %s/sigma_dut-ping-pid.%d\n",
-			broadcast ? " -b" : "", pkts, int_arg, size, extra,
-			intf_arg, dst, dut->sigma_tmpdir, id, dut->sigma_tmpdir, id);
-	}
+	fprintf(f, "#!" SHELL "\n"
+		"ping%s%s -c %d%s -s %d%s -q%s %s > %s"
+		"/sigma_dut-ping.%d &\n"
+		"echo $! > %s/sigma_dut-ping-pid.%d\n",
+		type == 2 ? "" : "", broadcast ? " -b" : "",
+		pkts, int_arg, size, extra,
+		intf_arg, dst, dut->sigma_tmpdir, id, dut->sigma_tmpdir, id);
 
 	fclose(f);
 	if (chmod(concat_sigma_tmpdir(dut, "/sigma_dut-ping.sh", ping,
