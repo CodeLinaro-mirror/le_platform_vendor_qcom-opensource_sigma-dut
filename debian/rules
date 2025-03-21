@@ -1,0 +1,7 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_usrlocal:
+	install -D sigma_dut $(CURDIR)/debian/sigma-dut/usr/local/bin/sigma_dut
