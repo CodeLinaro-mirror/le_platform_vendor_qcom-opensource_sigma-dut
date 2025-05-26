@@ -1,0 +1,13 @@
+Source: sigma-dut
+Section: utils
+Priority: optional
+Maintainer: Yingying Tang <quic_yintang@quicinc.com>
+Build-Depends: debhelper-compat (= 13), pkgconf
+Standards-Version: 4.6.2
+
+Package: sigma-dut
+Architecture: arm64
+Section: utils
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: WiFi WFA test tool
+ WiFi WFA test tool
