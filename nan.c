@@ -2,7 +2,7 @@
  * Sigma Control API DUT (NAN functionality)
  * Copyright (c) 2014-2017, Qualcomm Atheros, Inc.
  * Copyright (c) 2018, The Linux Foundation
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -3200,9 +3200,17 @@ void nan_init(struct sigma_dut *dut)
 	}
 	pthread_mutex_init(&gMutex, NULL);
 	pthread_cond_init(&gCondition, NULL);
-	if (dut->wifi_hal_iface_handle)
+	if (dut->wifi_hal_iface_handle) {
 		nan_register_handler(dut->wifi_hal_iface_handle,
 				     callbackHandler);
+#ifdef WFA_CERT_NANR4
+		if (if_nametoindex(NAN_AWARE_IFACE))
+			run_system_wrapper(dut, "ifconfig %s up",
+					   NAN_AWARE_IFACE);
+
+		nan_get_capabilities(0, dut->wifi_hal_iface_handle);
+#endif /* WFA_CERT_NANR4 */
+	}
 }
 
 

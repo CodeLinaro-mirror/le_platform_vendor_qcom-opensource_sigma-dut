@@ -3,6 +3,7 @@
  * Copyright (c) 2010-2011, Atheros Communications, Inc.
  * Copyright (c) 2011-2017, Qualcomm Atheros, Inc.
  * Copyright (c) 2018-2021, The Linux Foundation
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -587,8 +588,12 @@ static void handle_term(int sig)
 {
 	struct sigma_dut *dut = &sigma_dut;
 
+	printf("handle_term(sig=%d)\n", sig);
 	if (dut->sta_2g_started || dut->sta_5g_started)
 		stop_sta_mode(dut);
+	if (dut->hostapd_running && dut->use_hostapd_pid_file)
+		kill_hostapd_process_pid(dut);
+
 	stop_loop = 1;
 	stop_event_thread();
 	printf("sigma_dut terminating\n");
@@ -790,6 +795,11 @@ static void determine_sigma_p2p_ifname(struct sigma_dut *dut)
 
 	snprintf(buf, sizeof(buf), "p2p-dev-%s", get_station_ifname(dut));
 	ctrl = open_wpa_mon(buf);
+	if (!ctrl) {
+		snprintf(buf, sizeof(buf), "p2p0");
+		ctrl = open_wpa_mon(buf);
+	}
+
 	if (ctrl) {
 		wpa_ctrl_detach(ctrl);
 		wpa_ctrl_close(ctrl);
@@ -881,6 +891,7 @@ static void set_defaults(struct sigma_dut *dut)
 #endif /* ANDROID */
 	dut->autoconnect_default = 1;
 	set_host_name(dut);
+	dut->pasn_type = 0xf;
 }
 
 
@@ -934,6 +945,8 @@ static void deinit_sigma_dut(struct sigma_dut *dut)
 		dut->mdnssd_so = NULL;
 	}
 #endif /* ANDROID_MDNS */
+	free(dut->sta_bssid_pool);
+	dut->sta_bssid_pool = NULL;
 }
 
 

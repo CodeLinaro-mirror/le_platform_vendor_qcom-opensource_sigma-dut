@@ -3,6 +3,7 @@
  * Copyright (c) 2010, Atheros Communications, Inc.
  * Copyright (c) 2011-2013, 2016-2017 Qualcomm Atheros, Inc.
  * Copyright (c) 2018-2021, The Linux Foundation
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -43,6 +44,7 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 	char extra[100], int_arg[100], intf_arg[100], ip_dst[100], ping[100];
 	struct in6_addr ip6_addr;
 	bool broadcast = false;
+	const char *iface;
 
 	val = get_param(cmd, "Type");
 	if (!val)
@@ -54,6 +56,11 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 			  "ErrorCode,Unsupported address type");
 		return STATUS_SENT;
 	}
+
+	if (type == 2 && dut->program == PROGRAM_P2P)
+		iface = get_p2p_group_ifname(dut, get_main_ifname(dut));
+	else
+		iface = get_station_ifname(dut);
 
 	dst = get_param(cmd, "destination");
 	if (dst == NULL || (type == 1 && !is_ip_addr(dst)) ||
@@ -70,8 +77,7 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 		}
 
 		if (IN6_IS_ADDR_LINKLOCAL(&ip6_addr)) {
-			snprintf(ip_dst, sizeof(ip_dst), "%s%%%s", dst,
-				 get_station_ifname(dut));
+			snprintf(ip_dst, sizeof(ip_dst), "%s%%%s", dst, iface);
 			dst = ip_dst;
 		}
 	}
@@ -150,8 +156,7 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 	if (rate != 1)
 		snprintf(int_arg, sizeof(int_arg), " -i %f", interval);
 	if (!dut->ndp_enable && type == 2)
-		snprintf(intf_arg, sizeof(intf_arg), " -I %s",
-			 get_station_ifname(dut));
+		snprintf(intf_arg, sizeof(intf_arg), " -I %s", iface);
 	else
 		intf_arg[0] = '\0';
 	fprintf(f, "#!" SHELL "\n"
@@ -459,24 +464,11 @@ static enum sigma_cmd_result cmd_traffic_start_iperf(struct sigma_dut *dut,
 		}
 	}
 
-	if (iperf_v2)
-		iptype = ipv6 ? "-V" : "";
-
 	port_str[0] = '\0';
 	val = get_param(cmd, "port");
 	if (val) {
 		dst_port = atoi(val);
 		snprintf(port_str, sizeof(port_str), "-p %d", dst_port);
-	}
-
-	proto = "";
-	val = get_param(cmd, "transproto");
-	if (server && !iperf_v2 && val && strcasecmp(val, "tcp") != 0) {
-		send_resp(dut, conn, SIGMA_ERROR,
-			  "errorCode,Invalid Iperf3 option transproto in server mode");
-		return ERROR_SEND_STATUS;
-	} else if (val && strcasecmp(val, "udp") == 0) {
-		proto = "-u";
 	}
 
 	rate = 1024 * 1024 * 1024; /* default rate: 1 Gbps */
@@ -656,12 +648,23 @@ static enum sigma_cmd_result cmd_traffic_start_iperf(struct sigma_dut *dut,
 	unlink(concat_sigma_tmpdir(dut, iperf_pid_file, iperf,
 				   sizeof(iperf)));
 
+	/* open IPv6 multicast socket using iperf v2 */
+	if (ipv6 && dst && (strncmp(dst, "ff", 2) == 0))
+		iperf_v2 = true;
+
+	if (iperf_v2)
+		iptype = ipv6 ? "-V" : "";
+
+	proto = "";
+	val = get_param(cmd, "transproto");
+	/* proto -u is not applicable for iperf3 server */
+	if (val && strcasecmp(val, "udp") == 0  && !(!iperf_v2 && server))
+		proto = "-u";
+
 	if (server) {
 		/* write server side command to shell file */
 		if (ipv6 && dst && (strncmp(dst, "ff", 2) == 0)) {
 			/* open IPv6 multicast server socket using iperf */
-			iperf_v2 = true;
-			iptype = "-V";
 			snprintf(buf, sizeof(buf), "-B %s%%%s", dst, ifname);
 		} else if (dst) {
 			/* open IPv4 multicast server socket using iperf3 */
@@ -682,11 +685,6 @@ static enum sigma_cmd_result cmd_traffic_start_iperf(struct sigma_dut *dut,
 			snprintf(buf, sizeof(buf), "%s%%%s", dst, ifname);
 		else
 			snprintf(buf, sizeof(buf), "%s", dst);
-
-		if (ipv6 && (strncmp(dst, "ff", 2) == 0)) {
-			iperf_v2 = true;
-			iptype = "-V";
-		}
 
 		res = snprintf(iperf_cmd, sizeof(iperf_cmd),
 			"iperf%s -c %s -t %d %s %s%s %s%s%s%s%s -i 1 %s > %s%s &\n",
