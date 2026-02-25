@@ -3207,6 +3207,11 @@ static int set_eap_common(struct sigma_dut *dut, struct sigma_conn *conn,
 	if (erp && set_network(ifname, id, "erp", "1") < 0)
 		return ERROR_SEND_STATUS;
 
+	val = get_param(cmd, "IEEE8021x_Auth");
+	if (val && set_network(ifname, id, "eap_over_auth_frame",
+			       get_enable_disable(val) ? "1" : "0") < 0)
+		return -2;
+
 	dut->sta_associate_wait_connect = 1;
 
 	return id;
