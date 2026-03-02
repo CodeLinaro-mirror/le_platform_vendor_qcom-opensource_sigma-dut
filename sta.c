@@ -8264,6 +8264,23 @@ cmd_sta_preset_testparameters(struct sigma_dut *dut, struct sigma_conn *conn,
 		}
 	}
 
+	val = get_param(cmd, "PMKID_Initial");
+	if (val) {
+		int pmkid_cnt = atoi(val);
+		char buf[30];
+		int len;
+
+		len = snprintf(buf, sizeof(buf), "TEST_RANDOM_PMKID_COUNT %d",
+			       pmkid_cnt);
+
+		if (len < 0 || len >= sizeof(buf) ||
+		    wpa_command(intf, buf) != 0) {
+			send_resp(dut, conn, SIGMA_ERROR,
+				  "ErrorCode,Failed to update PMKID_Initial");
+			return STATUS_SENT_ERROR;
+		}
+	}
+
 	return 1;
 }
 
