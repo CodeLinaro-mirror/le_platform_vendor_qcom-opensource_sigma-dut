@@ -2,6 +2,7 @@
  * Sigma Control API DUT (station/AP/sniffer)
  * Copyright (c) 2011-2013, 2017, Qualcomm Atheros, Inc.
  * Copyright (c) 2018-2020, The Linux Foundation
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -331,6 +332,9 @@ static enum sigma_cmd_result cmd_dev_exec_action(struct sigma_dut *dut,
 	const char *program = get_param(cmd, "Program");
 	const char *val;
 
+	if (!program)
+		program = get_param(cmd, "prog");
+
 #ifdef MIRACAST
 	if (program && (strcasecmp(program, "WFD") == 0 ||
 			strcasecmp(program, "DisplayR2") == 0)) {
@@ -350,6 +354,11 @@ static enum sigma_cmd_result cmd_dev_exec_action(struct sigma_dut *dut,
 	if (program && strcasecmp(program, "WPA3") == 0)
 		return wpa3_dev_exec_action(dut, conn, cmd);
 
+	if (program && strcasecmp(program, "PR") == 0)
+		return loc_pr_cmd_dev_exec_action(dut, conn, cmd);
+
+	sigma_dut_print(dut, DUT_MSG_ERROR,
+			"dev_exec_action: Program %s not supported", program);
 	return ERROR_SEND_STATUS;
 }
 

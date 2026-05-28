@@ -3,6 +3,7 @@
  * Copyright (c) 2010-2011, Atheros Communications, Inc.
  * Copyright (c) 2011-2017, Qualcomm Atheros, Inc.
  * Copyright (c) 2018-2021, The Linux Foundation
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -85,6 +86,10 @@
 #define BIT_ULL(nr)		(1ULL << (nr))
 #endif
 
+#ifndef BIT
+#define BIT(x) (1U << (x))
+#endif
+
 #ifndef ETH_P_ARP
 #define ETH_P_ARP 0x0806
 #endif
@@ -100,6 +105,9 @@ struct sigma_dut;
 
 #define MAX_PARAMS 100
 #define MAX_RADIO 3
+#ifndef MAX_NUM_MLO_LINKS
+#define MAX_NUM_MLO_LINKS 15
+#endif
 
 #define NAN_AWARE_IFACE "wifi-aware0"
 #define BROADCAST_ADDR "255.255.255.255"
@@ -195,6 +203,7 @@ struct wfa_cs_p2p_group {
 	int go;
 	char grpid[P2P_GRP_ID_LEN];
 	char ssid[33];
+	char peer_mac[20];
 };
 
 #ifdef CONFIG_TRAFFIC_AGENT
@@ -248,7 +257,7 @@ struct sigma_stream {
 	int trans_proto;
 
 	int no_of_pkts_burst;
-	int burst_periodicity;
+	int burst_periodicity_us;
 	int dscp;
 	bool use_dscp;
 
@@ -373,6 +382,7 @@ enum akm_suite_values {
 	AKM_FILS_SHA384 = 15,
 	AKM_FT_FILS_SHA256 = 16,
 	AKM_FT_FILS_SHA384 = 17,
+	AKM_OWE = 18,
 	AKM_SAE_EXT_KEY = 24,
 	AKM_FT_SAE_EXT_KEY = 25,
 
@@ -488,6 +498,18 @@ struct peer_pairing_info {
 	bool is_paired;
 };
 
+#define P2P_MAX_PASSWORD_LEN 63
+struct p2p_r2_connect_info {
+	int go_intent;
+	int bootstrap;
+	char peer_mac[20];
+	char password[P2P_MAX_PASSWORD_LEN];
+	int freq;
+	int pairing_role;
+	bool is_opportunistic_bs;
+	bool join;
+};
+
 #ifdef ANDROID_MDNS
 struct mdnssd_apis {
 	__typeof__(DNSServiceCreateConnection) *service_create_connection;
@@ -519,6 +541,67 @@ struct mdnss_discovery_info {
 };
 #endif /* ANDROID_MDNS */
 
+enum sigma_akm_suites {
+	SIGMA_AKM_WPA_PSK = 0,
+	SIGMA_AKM_FT_PSK,
+	SIGMA_AKM_PSK_SHA256,
+	SIGMA_AKM_SAE,
+	SIGMA_AKM_FT_SAE,
+	SIGMA_AKM_SAE_EXT_KEY,
+	SIGMA_AKM_FT_SAE_EXT_KEY,
+	SIGMA_AKM_FT_802_1X,
+	SIGMA_AKM_FT_802_1X_SHA384,
+	SIGMA_AKM_SUITE_B,
+	SIGMA_AKM_SUITE_B_192,
+	SIGMA_AKM_FILS_SHA256,
+	SIGMA_AKM_FILS_SHA384,
+	SIGMA_AKM_FT_FILS_SHA256,
+	SIGMA_AKM_FT_FILS_SHA384,
+};
+
+enum sigma_cipher_suites {
+	SIGMA_CIPHER_CCMP = 0,
+	SIGMA_CIPHER_GCMP,
+	SIGMA_CIPHER_CCMP_256,
+	SIGMA_CIPHER_GCMP_256,
+	SIGMA_CIPHER_AES_128_CMAC,
+	SIGMA_CIPHER_BIP_GMAC_128,
+	SIGMA_CIPHER_BIP_GMAC_256,
+	SIGMA_CIPHER_BIP_CMAC_256,
+};
+
+enum oper_chan_width {
+	CONF_OPER_CHWIDTH_USE_HT = 0,
+	CONF_OPER_CHWIDTH_80MHZ = 1,
+	CONF_OPER_CHWIDTH_160MHZ = 2,
+	CONF_OPER_CHWIDTH_80P80MHZ = 3,
+	CONF_OPER_CHWIDTH_2160MHZ,
+	CONF_OPER_CHWIDTH_4320MHZ,
+	CONF_OPER_CHWIDTH_6480MHZ,
+	CONF_OPER_CHWIDTH_8640MHZ,
+	CONF_OPER_CHWIDTH_40MHZ_6GHZ,
+	CONF_OPER_CHWIDTH_320MHZ,
+};
+
+struct twt_config_params {
+	bool is_user_config;
+	bool is_bcast_twt;
+	bool unavailability_mode;
+	bool twt_trigger;
+	int cmd_type;
+	int flow_type;
+	int protection;
+	int target_wake_time;
+	int wake_interval_mantissa;
+	int wake_interval_exp;
+	int nominal_min_wake_dur;
+	int bcast_twt_id;
+	int bcast_twt_persis;
+	int bcast_twt_recommdn;
+	int responder_pm;
+	int ifindex;
+};
+
 struct sigma_dut {
 	const char *main_ifname;
 	char *main_ifname_2g;
@@ -529,6 +612,8 @@ struct sigma_dut {
 	char *p2p_ifname_buf;
 	int use_5g;
 	int ap_band_6g;
+	int ap_center_freq;
+	int ap_punct_bitmap;
 	int sta_2g_started;
 	int sta_5g_started;
 
@@ -576,6 +661,7 @@ struct sigma_dut {
 	char wps_pin[9];
 
 	struct wfa_cs_p2p_group *groups;
+	struct wfa_cs_p2p_group *active_group;
 
 	char infra_ssid[33];
 	int infra_network_id;
@@ -630,6 +716,7 @@ struct sigma_dut {
 		AP_11ac,
 		AP_11ad,
 		AP_11ax,
+		AP_11be,
 		AP_inval
 	} ap_mode;
 	int ap_channel;
@@ -665,6 +752,7 @@ struct sigma_dut {
 		AP_40,
 		AP_80,
 		AP_160,
+		AP_320,
 		AP_80_80,
 		AP_AUTO
 	} ap_chwidth;
@@ -693,6 +781,9 @@ struct sigma_dut {
 		AP_WPA2_PSK_SHA256,
 		AP_WPA2_ENT_FT_EAP,
 		AP_OSEN,
+		AP_PASN,
+		AP_PASN_SAE,
+		AP_WPA3_SAE_EXT,
 	} ap_key_mgmt;
 	enum ap_tag_key_mgmt {
 		AP2_OPEN,
@@ -709,6 +800,10 @@ struct sigma_dut {
 		AP_PMF_OPTIONAL,
 		AP_PMF_REQUIRED
 	} ap_pmf;
+	enum ap_pasn {
+		PASN_DISABLED,
+		PASN_ENABLED,
+	} ap_pasn;
 	enum ap_cipher {
 		AP_NO_GROUP_CIPHER_SET,
 		AP_CCMP,
@@ -802,7 +897,8 @@ struct sigma_dut {
 	enum ap_vht_chwidth {
 		AP_20_40_VHT_OPER_CHWIDTH,
 		AP_80_VHT_OPER_CHWIDTH,
-		AP_160_VHT_OPER_CHWIDTH
+		AP_160_VHT_OPER_CHWIDTH,
+		AP_320_VHT_OPER_CHWIDTH
 	} ap_vht_chwidth;
 	int ap_txBF;
 	int ap_mu_txBF;
@@ -891,6 +987,11 @@ struct sigma_dut {
 	int he_srctrl_allow;
 
 	int ap_ocvc;
+	int ap_cad_unsolicited_proberesp;
+	int ltf_trig;
+	int eht_txmcs;
+	int ap_addba_amsdu;
+	unsigned int ap_ehtmcs_map;
 
 	enum value_not_set_enabled_disabled ap_oce;
 	enum value_not_set_enabled_disabled ap_filsdscv;
@@ -909,6 +1010,17 @@ struct sigma_dut {
 	enum value_not_set_enabled_disabled ap_twtresp;
 	enum value_not_set_enabled_disabled he_sounding;
 	enum value_not_set_enabled_disabled he_set_sta_1x1;
+	enum value_not_set_enabled_disabled ap_unsolicited_proberesp;
+	enum value_not_set_enabled_disabled ap_activeind_proberesp;
+	enum value_not_set_enabled_disabled ap_6g_legacy_security;
+	enum value_not_set_enabled_disabled ap_fullbw_ulmumimo;
+	enum value_not_set_enabled_disabled ap_twtinfoframerx;
+	enum value_not_set_enabled_disabled ap_ulmudata_disablerx;
+	enum value_not_set_enabled_disabled ap_btwt;
+	enum value_not_set_enabled_disabled nontrigger_txbf;
+	enum value_not_set_enabled_disabled ap_preamblepunct;
+	enum value_not_set_enabled_disabled eht_omctrl;
+	enum value_not_set_enabled_disabled eht_txemlomn;
 
 	enum ppdu {
 		PPDU_NOT_SET,
@@ -923,6 +1035,7 @@ struct sigma_dut {
 		BA_BUFSIZE_NOT_SET,
 		BA_BUFSIZE_64,
 		BA_BUFSIZE_256,
+		BA_BUFSIZE_1024,
 	} ap_ba_bufsize;
 
 	enum mimo {
@@ -1020,6 +1133,8 @@ struct sigma_dut {
 		PROGRAM_HS2_2022,
 		PROGRAM_LOCR2,
 		PROGRAM_EHT,
+		PROGRAM_PR,
+		PROGRAM_P2P,
 	} program;
 
 	enum device_type {
@@ -1131,6 +1246,7 @@ struct sigma_dut {
 #ifdef NL80211_SUPPORT
 	struct nl80211_ctx *nl_ctx;
 	int config_rsnie;
+	int config_random_pmkid;
 #endif /* NL80211_SUPPORT */
 
 	int sta_nss;
@@ -1157,6 +1273,11 @@ struct sigma_dut {
 		SAE_PWE_LOOP,
 		SAE_PWE_H2E
 	} sae_pwe;
+	enum {
+		SEC_OPEN,
+		SEC_MAC,
+		SEC_PHY
+	} sectype;
 	int owe_ptk_workaround;
 	struct dut_hw_modes hw_modes;
 	int ocvc;
@@ -1182,6 +1303,9 @@ struct sigma_dut {
 	int i2rlmr_iftmr;
 	int i2rlmrpolicy;
 	int rnm_mfp;
+	int urnm_mfpr_x20;
+	int secure_ltf_supported;
+	int ap_pasn_unauth;
 	struct device_pairing_info dev_info;
 	struct peer_pairing_info peer_info;
 #ifdef ANDROID_MDNS
@@ -1192,8 +1316,21 @@ struct sigma_dut {
 #endif /* ANDROID_MDNS */
 	char host_name[100];
 	int sta_roaming_disabled;
-	char gw[16];
-	int gw_fail;
+	int ciphers_capa; /* bitmap of enum sigma_cipher_suites values */
+	int key_mgmt_capa; /* bitmap of enum sigma_akm_suites values */
+	int pairwise_ciphers_capa; /* bitmap of enum sigma_cipher_suites values
+				    */
+	int group_ciphers_capa; /* bitmap of enum sigma_cipher_suites values */
+	int group_mgmt_ciphers_capa; /* bitmap of enum sigma_cipher_suites
+				      * values */
+	bool usd_enabled;
+	bool p2p_r2_capable;
+	u8 pasn_type;
+	bool is_p2p_twt_power_mgmt_enabled;
+	struct twt_config_params twt_param;
+	char *sta_bssid_pool;
+	struct p2p_r2_connect_info p2p_connect_info;
+	pthread_t p2p_event_mon_thread;
 };
 
 
@@ -1309,6 +1446,9 @@ int ap_wps_registration(struct sigma_dut *dut, struct sigma_conn *conn,
 			struct sigma_cmd *cmd);
 const char * get_hostapd_ifname(struct sigma_dut *dut);
 void get_wiphy_capabilities(struct sigma_dut *dut);
+void kill_hostapd_process_pid(struct sigma_dut *dut);
+int fwtest_cmd_wrapper(struct sigma_dut *dut, const char *arg,
+		       const char *ifname);
 
 /* sta.c */
 void sta_register_cmds(void);
@@ -1337,11 +1477,17 @@ int sta_set_addba_buf_size(struct sigma_dut *dut,
 			   const char *intf, int bufsize);
 int wcn_set_he_gi(struct sigma_dut *dut, const char *intf, u8 gi_val);
 #ifdef NL80211_SUPPORT
+int wcn_set_link_gi(struct sigma_dut *dut, const char *intf, int link_id,
+		    u8 gi_val);
 int wcn_set_he_ltf(struct sigma_dut *dut, const char *intf,
 		   enum qca_wlan_he_ltf_cfg ltf);
 #endif /* NL80211_SUPPORT */
 void stop_dscp_policy_mon_thread(struct sigma_dut *dut);
 void free_dscp_policy_table(struct sigma_dut *dut);
+int sta_twt_request(struct sigma_dut *dut, struct sigma_conn *conn,
+		    struct sigma_cmd *cmd);
+int start_dhcp_client(struct sigma_dut *dut, const char *ifname);
+void kill_dhcp_client(struct sigma_dut *dut, const char *ifname);
 
 /* p2p.c */
 void p2p_register_cmds(void);
@@ -1353,9 +1499,11 @@ void start_dhcp(struct sigma_dut *dut, const char *group_ifname, int go);
 void stop_dhcp(struct sigma_dut *dut, const char *group_ifname, int go);
 int p2p_discover_peer(struct sigma_dut *dut, const char *ifname,
 		      const char *peer, int full);
-enum sigma_cmd_result cmd_sta_p2p_reset(struct sigma_dut *dut,
-					struct sigma_conn *conn,
-					struct sigma_cmd *cmd);
+const char * get_p2p_group_ifname(struct sigma_dut *dut, const char *ifname);
+const char * get_group_ifname(struct sigma_dut *dut, const char *ifname);
+enum sigma_cmd_result sta_p2p_reset_default(struct sigma_dut *dut,
+					    struct sigma_conn *conn,
+					    struct sigma_cmd *cmd);
 
 /* basic.c */
 void basic_register_cmds(void);
@@ -1373,6 +1521,9 @@ int parse_mac_address(struct sigma_dut *dut, const char *arg,
 int is_60g_sigma_dut(struct sigma_dut *dut);
 unsigned int channel_to_freq(struct sigma_dut *dut, unsigned int channel);
 unsigned int freq_to_channel(unsigned int freq);
+int freq_to_channel_and_class(unsigned int freq, int sec_channel,
+			      enum oper_chan_width chanwidth,
+			      int *op_class, int *channel);
 int is_ipv6_addr(const char *str);
 void convert_mac_addr_to_ipv6_lladdr(u8 *mac_addr, char *ipv6_buf,
 				     size_t buf_len);
@@ -1384,6 +1535,8 @@ size_t strlcpy(char *dest, const char *src, size_t siz);
 size_t strlcat(char *dst, const char *str, size_t size);
 #endif /* ANDROID */
 void hex_dump(struct sigma_dut *dut, u8 *data, size_t len);
+int snprintf_hex(char *buf, size_t buf_size, const uint8_t *data,
+		size_t len, bool uppercase);
 int get_wps_pin_from_mac(struct sigma_dut *dut, const char *macaddr,
 			 char *pin, size_t len);
 void str_remove_chars(char *str, char ch);
@@ -1430,6 +1583,8 @@ int lowi_cmd_sta_reset_default(struct sigma_dut *dut, struct sigma_conn *conn,
 			       struct sigma_cmd *cmd);
 int loc_r2_cmd_sta_exec_action(struct sigma_dut *dut, struct sigma_conn *conn,
 			       struct sigma_cmd *cmd);
+int loc_pr_cmd_dev_exec_action(struct sigma_dut *dut, struct sigma_conn *conn,
+			       struct sigma_cmd *cmd);
 
 /* dpp.c */
 enum sigma_cmd_result dpp_dev_exec_action(struct sigma_dut *dut,
@@ -1475,6 +1630,8 @@ int set_ipv6_addr(struct sigma_dut *dut, const char *ip, const char *mask,
 		  const char *ifname);
 void kill_pid(struct sigma_dut *dut, const char *pid_file);
 int get_ip_addr(const char *ifname, int ipv6, char *buf, size_t len);
+int chan_to_freq(int chan, bool is_6g);
+int freq_to_chan(int freq);
 bool is_6ghz_freq(int freq);
 
 enum sigma_cmd_result dev_start_test_log(struct sigma_dut *dut,
@@ -1483,5 +1640,14 @@ enum sigma_cmd_result dev_start_test_log(struct sigma_dut *dut,
 
 /* dnssd.c */
 int mdnssd_init(struct sigma_dut *dut);
+
+/* p2p_usd.c */
+enum sigma_cmd_result usd_cmd_sta_exec_action(struct sigma_dut *dut,
+					      struct sigma_conn *conn,
+					      struct sigma_cmd *cmd);
+u16 get_link_id_bitmask(const char *param);
+enum sigma_cmd_result p2p_cmd_sta_exec_action(struct sigma_dut *dut,
+					      struct sigma_conn *conn,
+					      struct sigma_cmd *cmd);
 
 #endif /* SIGMA_DUT_H */

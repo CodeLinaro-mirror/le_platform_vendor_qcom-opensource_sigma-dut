@@ -3,6 +3,7 @@
  * Copyright (c) 2010-2011, Atheros Communications, Inc.
  * Copyright (c) 2011-2014, 2016, Qualcomm Atheros, Inc.
  * Copyright (c) 2018-2021, The Linux Foundation
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -135,6 +136,10 @@ int wpa_ctrl_command(const char *path, const char *ifname, const char *cmd)
 	if (strncmp(buf, "FAIL", 4) == 0) {
 		printf("wpa_command: Command failed (FAIL received)\n");
 		return -1;
+	}
+	if (strncmp(buf, "UNKNOWN COMMAND", 15) == 0) {
+		printf("wpa_command: Command failed (unknown command)\n");
+		return 1;
 	}
 	return 0;
 }
@@ -627,6 +632,45 @@ int get_mlo_link_id_link_mac(struct sigma_dut *dut, const char *ifname,
 }
 
 
+int get_connected_mlo_link_ids(struct sigma_dut *dut, const char *ifname)
+{
+	char buf[4096];
+	char *param;
+	size_t flen;
+	char *saveptr = NULL;
+	int links_bitmask = 0;
+
+	if (get_wpa_status(ifname, "wpa_state", buf, sizeof(buf)) < 0 ||
+	    strncmp(buf, "COMPLETED", 9) != 0) {
+		sigma_dut_print(dut, DUT_MSG_DEBUG, "%s: Not connected",
+				__func__);
+		return 0;
+	}
+
+	if (get_wpa_mlo_status(ifname, buf, sizeof(buf))) {
+		sigma_dut_print(dut, DUT_MSG_DEBUG, "%s: Non-MLO connection",
+				__func__);
+		return 0;
+	}
+
+	flen = strlen("link_id");
+	param = strtok_r(buf, "\n", &saveptr);
+	while (param) {
+		if (strncasecmp(param, "link_id", flen) == 0) {
+			int link_id = atoi(&param[flen + 1]);
+
+			sigma_dut_print(dut, DUT_MSG_DEBUG,
+					"Found connected link ID %d", link_id);
+			links_bitmask |= BIT(link_id);
+		}
+
+		param = strtok_r(NULL, "\n", &saveptr);
+	}
+
+	return links_bitmask;
+}
+
+
 static int get_wpa_ctrl_status_field(const char *path, const char *ifname,
 				     const char *cmd, const char *field,
 				     char *obuf, size_t obuf_size)
@@ -676,6 +720,33 @@ static int get_wpa_ctrl_status_field(const char *path, const char *ifname,
 	return -1;
 }
 
+static int get_hapd_status(const char *ifname, const char *field, char *obuf,
+		   size_t obuf_size)
+{
+	const char *path = sigma_hapd_ctrl ?
+		sigma_hapd_ctrl : DEFAULT_HAPD_CTRL_PATH;
+
+	return get_wpa_ctrl_status_field(path, ifname, "STATUS",
+					 field, obuf, obuf_size);
+}
+
+int ap_get_mlo_link_id(struct sigma_dut *dut, const char *ifname)
+{
+	char buf[4096];
+	int link_id = -1;
+
+	if (get_hapd_status(ifname, "mld_link_id[0]", buf, sizeof(buf)) < 0) {
+		sigma_dut_print(dut, DUT_MSG_DEBUG, "%s: MLD Link ID not found",
+				__func__);
+		return -1;
+	}
+
+	link_id = atoi(buf);
+	sigma_dut_print(dut, DUT_MSG_DEBUG,
+			"%s: Found AP link ID %d", __func__, link_id);
+
+	return link_id;
+}
 
 int get_wpa_status(const char *ifname, const char *field, char *obuf,
 		   size_t obuf_size)
@@ -718,6 +789,69 @@ int wait_ip_addr(struct sigma_dut *dut, const char *ifname, int timeout)
 			"ifname='%s'", __func__, ifname);
 	return -1;
 }
+
+
+#ifdef ANDROID
+int add_ipv6_rule(struct sigma_dut *dut, const char *ifname)
+{
+	char cmd[200], *result, *pos;
+	FILE *fp;
+	int tableid;
+	size_t len, result_len = 1000;
+
+	snprintf(cmd, sizeof(cmd), "ip -6 route list table all | grep %s",
+		 ifname);
+	fp = popen(cmd, "r");
+	if (fp == NULL)
+		return -1;
+
+	result = malloc(result_len);
+	if (result == NULL) {
+		fclose(fp);
+		return -1;
+	}
+
+	len = fread(result, 1, result_len - 1, fp);
+	fclose(fp);
+
+	if (len == 0) {
+		free(result);
+		return -1;
+	}
+	result[len] = '\0';
+
+	pos = strstr(result, "table ");
+	if (pos == NULL) {
+		free(result);
+		return -1;
+	}
+
+	pos += strlen("table ");
+	tableid = atoi(pos);
+	if (tableid != 0) {
+		if (system("ip -6 rule del prio 22000") != 0) {
+			/* ignore any error */
+		}
+		snprintf(cmd, sizeof(cmd),
+			 "ip -6 rule add from all lookup %d prio 22000",
+			 tableid);
+		if (system(cmd) != 0) {
+			sigma_dut_print(dut, DUT_MSG_INFO,
+					"Failed to run %s", cmd);
+			free(result);
+			return -1;
+		}
+	} else {
+		sigma_dut_print(dut, DUT_MSG_INFO,
+				"No Valid Table Id found %s", pos);
+		free(result);
+		return -1;
+	}
+	free(result);
+
+	return 0;
+}
+#endif /* ANDROID */
 
 
 void remove_wpa_networks(const char *ifname)
